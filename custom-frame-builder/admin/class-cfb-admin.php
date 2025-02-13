@@ -22,9 +22,8 @@ class CFB_Admin {
     // ✅ Admin Page: Upload Category Images & Frames
     public function cfb_admin_page_content() {
         global $wpdb;
-        $table_name = $wpdb->prefix . 'cfb_categories';
         $categories = ['black_metal' => 'Black Metal', 'gold_metal' => 'Gold Metal', 'stretcher' => 'Stretcher'];
-        $existing_images = $wpdb->get_results("SELECT * FROM $table_name", OBJECT_K);
+        $existing_images = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}cfb_categories", OBJECT_K);
 
         ?>
         <div class="wrap">
@@ -33,6 +32,7 @@ class CFB_Admin {
             <!-- ✅ Frame Category Image Upload Section -->
             <h2>Upload Frame Category Images</h2>
             <form method="post" enctype="multipart/form-data" action="<?php echo admin_url('admin-post.php'); ?>">
+                <?php wp_nonce_field('cfb_save_category_image', 'cfb_category_image_nonce'); ?>
                 <input type="hidden" name="action" value="cfb_save_category_image">
                 <table class="form-table">
                     <?php foreach ($categories as $slug => $label): ?>
@@ -54,6 +54,7 @@ class CFB_Admin {
             <!-- ✅ Frame Upload Section -->
             <h2>Upload Frame Moldings</h2>
             <form method="post" enctype="multipart/form-data" action="<?php echo admin_url('admin-post.php'); ?>">
+                <?php wp_nonce_field('cfb_save_frame', 'cfb_frame_nonce'); ?>
                 <input type="hidden" name="action" value="cfb_save_frame">
                 <table class="form-table">
                     <tr>
@@ -64,9 +65,9 @@ class CFB_Admin {
                         <th>Frame Category:</th>
                         <td>
                             <select name="frame_category" id="frame_category">
-                                <option value="black_metal">Black Metal</option>
-                                <option value="gold_metal">Gold Metal</option>
-                                <option value="stretcher">Stretcher</option>
+                                <?php foreach ($categories as $slug => $label): ?>
+                                    <option value="<?php echo esc_attr($slug); ?>"><?php echo esc_html($label); ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </td>
                     </tr>
@@ -139,27 +140,5 @@ class CFB_Admin {
             });
         </script>
         <?php
-    }
-
-    // ✅ Save Frame Details
-    public function cfb_save_frame_molding() {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'cfb_frames';
-
-        $name = sanitize_text_field($_POST['frame_name']);
-        $category = sanitize_text_field($_POST['frame_category']);
-        $price_8x10 = floatval($_POST['price_8x10']);
-        $price_11x14 = floatval($_POST['price_11x14']);
-        $price_16x20 = floatval($_POST['price_16x20']);
-        $plexi_price_8x10 = isset($_POST['plexi_price_8x10']) ? floatval($_POST['plexi_price_8x10']) : null;
-        $plexi_price_11x14 = isset($_POST['plexi_price_11x14']) ? floatval($_POST['plexi_price_11x14']) : null;
-        $plexi_price_16x20 = isset($_POST['plexi_price_16x20']) ? floatval($_POST['plexi_price_16x20']) : null;
-
-        $upload = wp_upload_bits($_FILES['frame_image']['name'], null, file_get_contents($_FILES['frame_image']['tmp_name']));
-
-        $wpdb->insert($table_name, compact('name', 'category', 'price_8x10', 'price_11x14', 'price_16x20', 'plexi_price_8x10', 'plexi_price_11x14', 'plexi_price_16x20', 'image_url'));
-
-        wp_redirect(admin_url('admin.php?page=cfb_frame_builder&success=1'));
-        exit;
     }
 }

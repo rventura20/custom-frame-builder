@@ -3,12 +3,24 @@ class CFB_Public {
     public function __construct() {
         add_shortcode('cfb_frame_builder', array($this, 'cfb_display_frame_builder'));
         add_action('wp_enqueue_scripts', array($this, 'cfb_enqueue_assets'));
+
+        // AJAX actions
+        add_action('wp_ajax_cfb_get_frames', array($this, 'cfb_get_frames'));
+        add_action('wp_ajax_nopriv_cfb_get_frames', array($this, 'cfb_get_frames'));
+        add_action('wp_ajax_cfb_get_price', array($this, 'cfb_get_price'));
+        add_action('wp_ajax_nopriv_cfb_get_price', array($this, 'cfb_get_price'));
+        add_action('wp_ajax_cfb_add_to_cart', array($this, 'cfb_add_to_cart'));
+        add_action('wp_ajax_nopriv_cfb_add_to_cart', array($this, 'cfb_add_to_cart'));
     }
 
     // ✅ Load CSS & JavaScript
     public function cfb_enqueue_assets() {
         wp_enqueue_style('cfb-style', plugin_dir_url(__FILE__) . '../assets/css/style.css');
         wp_enqueue_script('cfb-script', plugin_dir_url(__FILE__) . '../assets/js/customizer.js', array('jquery'), null, true);
+        wp_localize_script('cfb-script', 'customizer_ajax', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('cfb_ajax_nonce')
+        ));
     }
 
     // ✅ Display Frame Builder with Category Selection
@@ -52,136 +64,88 @@ class CFB_Public {
         <canvas id="preview-canvas" width="500" height="500"></canvas>
         <button id="add-to-cart">Add to Cart</button>
 
-        <script>
-            jQuery(document).ready(function($) {
-                // ✅ Handle Frame Category Selection
-                $(".frame-category-btn").click(function() {
-                    let selectedCategory = $(this).data("category");
-
-                    $(".frame-category-btn").removeClass("active");
-                    $(this).addClass("active");
-
-                    $.post("<?php echo admin_url('admin-ajax.php'); ?>", {
-                        action: "cfb_get_frames",
-                        category: selectedCategory
-                    }, function(response) {
-                        $("#frame-selector").html(response);
-                        $("#frame-selector").trigger("change");
-                    });
-
-                    // Show Plexiglass selection only for Black Metal & Gold Metal
-                    if (selectedCategory === "black_metal" || selectedCategory === "gold_metal") {
-                        $("#plexiglass-type").show();
-                    } else {
-                        $("#plexiglass-type").hide();
-                    }
-                });
-
-                // ✅ Handle Frame & Size Selection
-                $("#frame-selector, #frame-size, #plexiglass-type").change(function() {
-                    let frameId = $("#frame-selector").val();
-                    let frameSize = $("#frame-size").val();
-                    let plexiglassType = $("#plexiglass-type").val();
-
-                    $.post("<?php echo admin_url('admin-ajax.php'); ?>", {
-                        action: "cfb_get_price",
-                        frame_id: frameId,
-                        size: frameSize,
-                        plexiglass: plexiglassType
-                    }, function(response) {
-                        $("#frame-price").text(response);
-                    });
-                });
-
-                $(".frame-category-btn").first().trigger("click");
-            });
-        </script>
-
-        <style>
-            .frame-category-btn {
-                border: none;
-                background: none;
-                cursor: pointer;
-                text-align: center;
-                margin: 10px;
-            }
-            .category-icon {
-                width: 80px;
-                height: 80px;
-                border-radius: 50%;
-                border: 2px solid #000;
-            }
-            .frame-category-btn.active .category-icon {
-                border: 3px solid #f00;
-            }
-            #plexiglass-type {
-                display: none;
-            }
-        </style>
-        <?php
-        return ob_get_clean();
-    }
-}
-
-// ✅ AJAX to Fetch Frames by Category
-add_action('wp_ajax_cfb_get_frames', 'cfb_get_frames');
-add_action('wp_ajax_nopriv_cfb_get_frames', 'cfb_get_frames');
-
-function cfb_get_frames() {
-    if (!isset($_POST['category'])) {
-        wp_send_json_error('Missing category');
+        <?php return ob_get_clean();
     }
 
-    global $wpdb;
-    $table_name = $wpdb->prefix . 'cfb_frames';
-    $category = sanitize_text_field($_POST['category']);
+    // ✅ AJAX: Get Frames Based on Selected Category
+    public function cfb_get_frames() {
+        check_ajax_referer('cfb_ajax_nonce', 'security');
 
-    $frames = $wpdb->get_results($wpdb->prepare("SELECT * FROM $table_name WHERE category = %s", $category));
+        if (!isset($_POST['category'])) {
+            wp_send_json_error('Missing category');
+        }
 
-    ob_start();
-    foreach ($frames as $frame) {
-        echo '<option value="'.esc_url($frame->image_url).'">'.esc_html($frame->name).'</option>';
-    }
-    wp_send_json_success(ob_get_clean());
-}
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'cfb_frames';
+        $category = sanitize_text_field($_POST['category']);
 
-// ✅ AJAX to Fetch Price Based on Frame, Size, and Plexiglass
-add_action('wp_ajax_cfb_get_price', 'cfb_get_price');
-add_action('wp_ajax_nopriv_cfb_get_price', 'cfb_get_price');
+        $frames = $wpdb->get_results($wpdb->prepare("SELECT * FROM $table_name WHERE category = %s", $category));
 
-function cfb_get_price() {
-    if (!isset($_POST['frame_id']) || !isset($_POST['size'])) {
-        wp_send_json_error('Missing parameters');
-    }
-
-    global $wpdb;
-    $frame_table = $wpdb->prefix . 'cfb_frames';
-    $frame_id = sanitize_text_field($_POST['frame_id']);
-    $size = sanitize_text_field($_POST['size']);
-    $plexiglass = sanitize_text_field($_POST['plexiglass']);
-
-    $frame = $wpdb->get_row($wpdb->prepare("SELECT * FROM $frame_table WHERE image_url = %s", $frame_id));
-
-    if (!$frame) {
-        wp_send_json_error('Frame not found');
+        ob_start();
+        foreach ($frames as $frame) {
+            echo '<option value="'.esc_url($frame->image_url).'">'.esc_html($frame->name).'</option>';
+        }
+        wp_send_json_success(ob_get_clean());
     }
 
-    // Select size pricing
-    $price = 0;
-    if ($size == "8x10") $price = $frame->price_8x10;
-    if ($size == "11x14") $price = $frame->price_11x14;
-    if ($size == "16x20") $price = $frame->price_16x20;
+    // ✅ AJAX: Get Price Based on Frame, Size, and Plexiglass
+    public function cfb_get_price() {
+        check_ajax_referer('cfb_ajax_nonce', 'security');
 
-    // Add plexiglass pricing
-    if ($plexiglass == "regular") {
-        if ($size == "8x10") $price += $frame->plexi_price_8x10;
-        if ($size == "11x14") $price += $frame->plexi_price_11x14;
-        if ($size == "16x20") $price += $frame->plexi_price_16x20;
-    } elseif ($plexiglass == "non-glare") {
-        if ($size == "8x10") $price += $frame->plexi_ng_price_8x10;
-        if ($size == "11x14") $price += $frame->plexi_ng_price_11x14;
-        if ($size == "16x20") $price += $frame->plexi_ng_price_16x20;
+        if (!isset($_POST['frame_id']) || !isset($_POST['size'])) {
+            wp_send_json_error('Missing parameters');
+        }
+
+        global $wpdb;
+        $frame_table = $wpdb->prefix . 'cfb_frames';
+        $frame_id = sanitize_text_field($_POST['frame_id']);
+        $size = sanitize_text_field($_POST['size']);
+        $plexiglass = sanitize_text_field($_POST['plexiglass']);
+
+        $frame = $wpdb->get_row($wpdb->prepare("SELECT * FROM $frame_table WHERE image_url = %s", $frame_id));
+
+        if (!$frame) {
+            wp_send_json_error('Frame not found');
+        }
+
+        // Select size pricing
+        $price = 0;
+        if ($size == "8x10") $price = $frame->price_8x10;
+        if ($size == "11x14") $price = $frame->price_11x14;
+        if ($size == "16x20") $price = $frame->price_16x20;
+
+        // Add plexiglass pricing
+        if ($plexiglass == "regular") {
+            if ($size == "8x10") $price += $frame->plexi_price_8x10;
+            if ($size == "11x14") $price += $frame->plexi_price_11x14;
+            if ($size == "16x20") $price += $frame->plexi_price_16x20;
+        } elseif ($plexiglass == "non-glare") {
+            if ($size == "8x10") $price += $frame->plexi_ng_price_8x10;
+            if ($size == "11x14") $price += $frame->plexi_ng_price_11x14;
+            if ($size == "16x20") $price += $frame->plexi_ng_price_16x20;
+        }
+
+        wp_send_json_success($price);
     }
 
-    wp_send_json_success($price);
+    // ✅ AJAX: Add to WooCommerce Cart
+    public function cfb_add_to_cart() {
+        check_ajax_referer('cfb_ajax_nonce', 'security');
+
+        if (!isset($_POST['frame_id']) || !isset($_POST['size'])) {
+            wp_send_json_error('Missing parameters');
+        }
+
+        $product_id = 123; // Replace with actual WooCommerce product ID
+
+        $cart_item_data = array(
+            'frame_image' => sanitize_text_field($_POST['frame_id']),
+            'size' => sanitize_text_field($_POST['size']),
+            'plexiglass' => sanitize_text_field($_POST['plexiglass']),
+            'user_image' => esc_url_raw($_POST['user_image'])
+        );
+
+        WC()->cart->add_to_cart($product_id, 1, '', array(), $cart_item_data);
+        wp_send_json_success();
+    }
 }
